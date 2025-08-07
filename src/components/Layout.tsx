@@ -375,7 +375,7 @@ export default function Layout({ children }: LayoutProps) {
                 background: 'linear-gradient(135deg, #9e7f57 0%, #8a6d4a 100%)'
               }}
             >
-              {user?.name.charAt(0)}
+              {user?.profile?.firstName?.charAt(0) || user?.username?.charAt(0) || 'U'}
             </div>
             {sidebarExpanded && (
               <motion.div
@@ -386,10 +386,10 @@ export default function Layout({ children }: LayoutProps) {
                 className="flex-1 min-w-0"
               >
                 <p className="text-sm font-semibold truncate" style={{ color: '#6d5238' }}>
-                  {user?.name}
+                  {user?.profile?.firstName ? `${user.profile.firstName} ${user.profile.lastName}` : user?.username}
                 </p>
                 <p className="text-xs truncate" style={{ color: '#9e7f57' }}>
-                  {user?.role}
+                  {user?.profile?.position || user?.role}
                 </p>
               </motion.div>
             )}
@@ -488,10 +488,10 @@ export default function Layout({ children }: LayoutProps) {
                   background: 'linear-gradient(135deg, #9e7f57 0%, #8a6d4a 100%)'
                 }}
               >
-                {user?.name.charAt(0)}
+                {user?.profile?.firstName?.charAt(0) || user?.username?.charAt(0) || 'U'}
               </div>
               <span className="text-sm font-medium" style={{ color: '#6d5238' }}>
-                {user?.name}
+                {user?.profile?.firstName ? `${user.profile.firstName} ${user.profile.lastName}` : user?.username}
               </span>
             </div>
           </div>
