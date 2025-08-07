@@ -29,10 +29,49 @@
   box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
 }
 
+/* Fixed Modal Size - Prevents resizing */
+.modal-container-fixed {
+  width: 100%;
+  max-width: 1400px;
+  height: 95vh;
+  max-height: 95vh;
+}
+
+/* Compact Menu Item Cards */
+.menu-item-compact {
+  min-height: 120px;
+  max-height: 140px;
+}
+
 /* Hardware Acceleration */
 .gpu-accelerated {
   transform: translateZ(0);
   will-change: transform;
+}
+
+/* Shift Modal Scrollbar */
+.shift-modal-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(156, 163, 175, 0.5) transparent;
+}
+
+.shift-modal-scroll::-webkit-scrollbar {
+  width: 8px;
+}
+
+.shift-modal-scroll::-webkit-scrollbar-track {
+  background: rgba(249, 250, 251, 0.5);
+  border-radius: 8px;
+}
+
+.shift-modal-scroll::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.5);
+  border-radius: 8px;
+  border: 1px solid rgba(249, 250, 251, 0.5);
+}
+
+.shift-modal-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(107, 114, 128, 0.7);
 }
 
 /* Custom Scrollbar for Sidebar */
@@ -89,4 +128,59 @@
 
 .orders-scroll::-webkit-scrollbar-thumb:hover {
   background: #94a3b8;
+}
+
+/* Modal Scrollbar Styling */
+.modal-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: rgba(158, 127, 87, 0.3) rgba(158, 127, 87, 0.1);
+  scroll-behavior: smooth;
+}
+
+.modal-scroll::-webkit-scrollbar { 
+  width: 6px;
+}
+
+.modal-scroll::-webkit-scrollbar-track {
+  background: rgba(158, 127, 87, 0.1);
+  border-radius: 3px;
+}
+
+.modal-scroll::-webkit-scrollbar-thumb {
+  background: rgba(158, 127, 87, 0.4);
+  border-radius: 3px;
+  transition: background 0.2s ease;
+}
+
+.modal-scroll::-webkit-scrollbar-thumb:hover {
+  background: rgba(158, 127, 87, 0.6);
+}
+
+/* Chiya Shop Theme Colors */
+.chiya-gradient {
+  background: linear-gradient(135deg, #9e7f57 0%, #8a6d4a 50%, #76603d 100%);
+}
+
+.chiya-gradient-hover {
+  background: linear-gradient(135deg, #8a6d4a 0%, #76603d 100%);
+}
+
+.chiya-bg-light {
+  background-color: rgba(158, 127, 87, 0.05);
+}
+
+.chiya-bg-medium {
+  background-color: rgba(158, 127, 87, 0.1);
+}
+
+.chiya-border {
+  border-color: rgba(158, 127, 87, 0.2);
+}
+
+.chiya-text {
+  color: #9e7f57;
+}
+
+.chiya-text-dark {
+  color: #6d5238;
 }

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   Plus,
@@ -16,6 +16,7 @@ import {
   MapPin
 } from 'lucide-react';
 import { useData } from '../context/DataContext';
+import ShiftTableModal from '../components/ShiftTableModal';
 import toast from 'react-hot-toast';
 
 export default function TableManagement() {
@@ -37,18 +38,44 @@ export default function TableManagement() {
   const [showShiftModal, setShowShiftModal] = useState(false);
   const [showViewOrdersModal, setShowViewOrdersModal] = useState(false);
   const [selectedItems, setSelectedItems] = useState<{[key: string]: number}>({});
+  const [activeCategory, setActiveCategory] = useState<string>('');
+  const [searchTerm, setSearchTerm] = useState('');
   const [checkoutData, setCheckoutData] = useState({
     paymentMethod: 'cash',
     discount: 0,
     notes: ''
   });
   const [tablesToMerge, setTablesToMerge] = useState<string[]>([]);
-  const [shiftToTable, setShiftToTable] = useState('');
-  const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'available' | 'occupied' | 'merged'>('all');
-  const [areaFilter, setAreaFilter] = useState<'all' | string>('all');
+  const [areaFilter, setAreaFilter] = useState<string>('all');
+
+  // Initialize active category
+  useEffect(() => {
+    if (menuItems.length > 0 && !activeCategory) {
+      setActiveCategory(menuItems[0].category);
+    }
+  }, [menuItems, activeCategory]);
+
+  // Filtered menu items based on category and search
+  const filteredMenuItems = useMemo(() => {
+    return menuItems.filter(item => {
+      const matchesCategory = !activeCategory || item.category === activeCategory;
+      const matchesSearch = !searchTerm || 
+        item.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        item.description?.toLowerCase().includes(searchTerm.toLowerCase());
+      return matchesCategory && matchesSearch && item.available;
+    });
+  }, [menuItems, activeCategory, searchTerm]);
 
   const selectedTableData = tables.find(t => t.id === selectedTable);
+
+  // Get available tables for shifting (excluding current selected table)
+  const availableTablesForShift = useMemo(() => {
+    return tables.filter(table => 
+      table.id !== selectedTable && 
+      table.status === 'available'
+    );
+  }, [tables, selectedTable]);
 
   // Enhanced filtering and search
   const filteredTables = useMemo(() => {
@@ -148,14 +175,17 @@ export default function TableManagement() {
     toast.success('Tables unmerged successfully!');
   };
 
-  const handleShift = () => {
-    if (!selectedTable || !shiftToTable) return;
-
-    shiftTable(selectedTable, shiftToTable);
-    setShowShiftModal(false);
-    setShiftToTable('');
-    setSelectedTable(null);
-    toast.success('Table shifted successfully!');
+  const handleShift = async (sourceTableId: string, targetTableId: string) => {
+    try {
+      shiftTable(sourceTableId, targetTableId);
+      // Add a small delay for better UX feedback
+      await new Promise(resolve => setTimeout(resolve, 500));
+      setSelectedTable(null);
+      toast.success('Table shifted successfully!');
+    } catch (error) {
+      toast.error('Failed to shift table. Please try again.');
+      throw error; // Re-throw to let the modal handle the error state
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -797,7 +827,7 @@ export default function TableManagement() {
         </motion.div>
       )}
 
-      {/* Enhanced Professional Add Order Modal */}
+      {/* Professional Add Order Modal - Completely Redesigned */}
       {showOrderModal && selectedTable && (
         <div className="fixed inset-0 bg-black bg-opacity-60 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
           <motion.div
@@ -805,242 +835,555 @@ export default function TableManagement() {
             animate={{ opacity: 1, scale: 1, y: 0 }}
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ type: "spring", damping: 25, stiffness: 300 }}
-            className="bg-white rounded-3xl shadow-2xl w-full max-w-6xl max-h-[90vh] overflow-hidden flex flex-col"
+            className="bg-white rounded-2xl shadow-2xl modal-container-fixed overflow-hidden"
+            style={{ 
+              display: 'grid',
+              gridTemplateColumns: (Object.values(selectedItems).some(qty => qty > 0) || (selectedTableData?.order.length || 0) > 0)
+                ? '320px 1fr 320px' 
+                : '320px 1fr',
+              transition: 'grid-template-columns 0.3s ease-in-out'
+            }}
           >
-            {/* Enhanced Header */}
-            <div className="bg-gradient-to-r from-orange-500 to-amber-500 p-6 text-white">
-              <div className="flex justify-between items-center">
-                <div className="flex items-center space-x-4">
-                  <div className="w-12 h-12 bg-white bg-opacity-20 rounded-2xl flex items-center justify-center">
-                    <Plus className="w-6 h-6 text-white" />
-                  </div>
-                  <div>
-                    <h3 className="text-2xl font-bold">
-                      Add Items - Table {selectedTableData?.number}
-                    </h3>
-                    <p className="text-orange-100 text-sm">
-                      Browse and select items from our menu
-                    </p>
-                  </div>
-                </div>
-                <motion.button
-                  whileHover={{ scale: 1.1, rotate: 90 }}
-                  whileTap={{ scale: 0.9 }}
-                  onClick={() => {
-                    setShowOrderModal(false);
-                    setSelectedItems({});
-                  }}
-                  className="w-10 h-10 bg-white bg-opacity-20 hover:bg-opacity-30 rounded-xl flex items-center justify-center text-white transition-all"
-                >
-                  <X className="w-5 h-5" />
-                </motion.button>
-              </div>
-            </div>
-
-            {/* Search & Filter Bar */}
-            <div className="px-6 py-4 bg-gray-50 border-b border-gray-200">
-              <div className="flex flex-col sm:flex-row gap-4">
-                <div className="flex-1 relative">
-                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-gray-400" />
+            {/* Left Sidebar - Menu Categories */}
+            <div 
+              className="border-r border-gray-200 flex flex-col"
+              style={{ backgroundColor: '#faf9f7' }}
+            >
+              {/* Header */}
+              <div 
+                className="p-6 border-b"
+                style={{ 
+                  borderColor: 'rgba(158, 127, 87, 0.2)',
+                  background: 'linear-gradient(135deg, #9e7f57 0%, #8a6d4a 50%, #76603d 100%)'
+                }}
+              >
+                <h3 className="text-xl font-bold text-white">
+                  Add Items - Table {selectedTableData?.number}
+                </h3>
+                <p className="text-white/80 text-sm mt-1">
+                  Select items from our menu
+                </p>
+                
+                {/* Search */}
+                <div className="relative mt-4">
+                  <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400" />
                   <input
                     type="text"
-                    placeholder="Search menu items..."
-                    className="w-full pl-10 pr-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent transition-all"
+                    placeholder="Search items..."
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2.5 bg-white/90 backdrop-blur border border-white/20 rounded-lg focus:ring-2 focus:ring-white/50 focus:border-transparent text-sm text-gray-700 placeholder-gray-500"
                   />
                 </div>
-                <div className="flex space-x-3">
-                  <select className="px-4 py-3 bg-white border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 focus:border-transparent">
-                    <option value="all">All Categories</option>
-                    <option value="beverages">Beverages</option>
-                    <option value="snacks">Snacks</option>
-                    <option value="main-course">Main Course</option>
-                    <option value="desserts">Desserts</option>
-                  </select>
+              </div>
+
+              {/* Categories */}
+              <div className="flex-1 overflow-y-auto p-4 modal-scroll">
+                <div className="space-y-2">
+                  {Array.from(new Set(menuItems.map(item => item.category))).map((category) => (
+                    <button
+                      key={category}
+                      onClick={() => setActiveCategory(category)}
+                      className={`w-full text-left px-4 py-3 rounded-lg transition-all duration-200 ${
+                        activeCategory === category
+                          ? 'text-white shadow-md'
+                          : 'bg-white hover:bg-white/80 text-gray-700 hover:shadow-sm'
+                      }`}
+                      style={{
+                        background: activeCategory === category 
+                          ? 'linear-gradient(135deg, #9e7f57 0%, #8a6d4a 100%)'
+                          : undefined
+                      }}
+                    >
+                      <div className="flex justify-between items-center">
+                        <span className="font-medium">{category}</span>
+                        <span 
+                          className={`text-xs px-2 py-1 rounded-full ${
+                            activeCategory === category 
+                              ? 'bg-white/20 text-white' 
+                              : 'bg-gray-100 text-gray-600'
+                          }`}
+                        >
+                          {menuItems.filter(item => item.category === category).length}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
                 </div>
               </div>
             </div>
 
-            {/* Floating Order Summary */}
-            <AnimatePresence>
-              {Object.values(selectedItems).some(qty => qty > 0) && (
-                <motion.div
-                  initial={{ opacity: 0, y: -20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -20 }}
-                  className="mx-6 mt-4 bg-gradient-to-r from-green-50 to-emerald-50 border-2 border-green-200 rounded-2xl p-4 shadow-lg"
-                >
-                  <div className="flex justify-between items-center">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 bg-green-500 rounded-xl flex items-center justify-center">
-                        <ShoppingBag className="w-5 h-5 text-white" />
-                      </div>
-                      <div>
-                        <p className="font-bold text-green-800 text-lg">
-                          {Object.values(selectedItems).reduce((sum, qty) => sum + qty, 0)} Items Selected
-                        </p>
-                        <p className="text-green-600 font-semibold">
-                          Total: ₹{Object.entries(selectedItems).reduce((sum, [menuId, quantity]) => {
-                            const item = menuItems.find(m => m.id === menuId);
-                            return sum + (item ? item.price * quantity : 0);
-                          }, 0)}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="flex space-x-2">
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => setSelectedItems({})}
-                        className="px-4 py-2 bg-red-100 hover:bg-red-200 text-red-700 rounded-xl text-sm font-medium transition-colors"
-                      >
-                        Clear All
-                      </motion.button>
-                      <motion.button
-                        whileHover={{ scale: 1.05 }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={() => {/* Show selected items */}}
-                        className="px-4 py-2 bg-green-500 hover:bg-green-600 text-white rounded-xl text-sm font-medium transition-colors"
-                      >
-                        Review Order
-                      </motion.button>
-                    </div>
+            {/* Center Content - Menu Items */}
+            <div className="flex-1 flex flex-col bg-white">
+              {/* Header with Close Button */}
+              <div className="p-6 border-b border-gray-200 flex justify-between items-center bg-white">
+                <div>
+                  <h4 className="text-lg font-bold text-gray-900">{activeCategory}</h4>
+                  <div className="flex items-center space-x-4 text-sm text-gray-500 mt-1">
+                    <span>{filteredMenuItems.length} items available</span>
+                    {(selectedTableData?.order.length || 0) > 0 && (
+                      <span className="flex items-center space-x-1">
+                        <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                        <span>{selectedTableData?.order.length} items already ordered</span>
+                      </span>
+                    )}
+                    {Object.values(selectedItems).some(qty => qty > 0) && (
+                      <span className="flex items-center space-x-1">
+                        <div className="w-2 h-2 rounded-full" style={{ backgroundColor: '#9e7f57' }}></div>
+                        <span>{Object.values(selectedItems).reduce((sum, qty) => sum + qty, 0)} new items selected</span>
+                      </span>
+                    )}
                   </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
-
-            {/* Menu Items Grid */}
-            <div className="flex-1 overflow-y-auto p-6">
-              <div className="space-y-8">
-                {Object.entries(
-                  menuItems.reduce((acc, item) => {
-                    if (!acc[item.category]) acc[item.category] = [];
-                    acc[item.category].push(item);
-                    return acc;
-                  }, {} as {[key: string]: typeof menuItems})
-                ).map(([category, items]) => (
-                  <motion.div
-                    key={category}
-                    initial={{ opacity: 0, y: 20 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: 0.1 }}
-                  >
-                    <div className="flex items-center mb-6">
-                      <div className="w-1 h-8 bg-gradient-to-b from-orange-400 to-amber-400 rounded-full mr-4"></div>
-                      <h4 className="text-xl font-bold text-gray-900">{category}</h4>
-                      <div className="flex-1 h-px bg-gray-200 ml-4"></div>
-                      <span className="text-sm text-gray-500 ml-4">{items.length} items</span>
-                    </div>
-                    
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {items.map((item) => (
-                        <motion.div
-                          key={item.id}
-                          layout
-                          whileHover={{ scale: 1.02, y: -2 }}
-                          whileTap={{ scale: 0.98 }}
-                          className="group bg-white border border-gray-200 hover:border-orange-300 rounded-2xl p-5 transition-all duration-200 hover:shadow-lg cursor-pointer"
-                        >
-                          <div className="flex justify-between items-start mb-4">
-                            <div className="flex-1">
-                              <h5 className="font-bold text-gray-900 text-lg group-hover:text-orange-600 transition-colors">
-                                {item.name}
-                              </h5>
-                              <p className="text-2xl font-bold text-orange-500 mt-1">₹{item.price}</p>
-                              {item.description && (
-                                <p className="text-sm text-gray-600 mt-2 line-clamp-2">{item.description}</p>
-                              )}
-                            </div>
-                          </div>
-                          
-                          <div className="flex items-center justify-between">
-                            <div className="flex items-center space-x-1">
-                              <motion.button
-                                whileHover={{ scale: 1.1 }}
-                                whileTap={{ scale: 0.9 }}
-                                onClick={() => setSelectedItems(prev => ({
-                                  ...prev,
-                                  [item.id]: Math.max(0, (prev[item.id] || 0) - 1)
-                                }))}
-                                disabled={!selectedItems[item.id]}
-                                className="w-10 h-10 bg-red-100 hover:bg-red-200 disabled:bg-gray-100 disabled:text-gray-400 rounded-xl flex items-center justify-center text-red-600 font-bold transition-all"
-                              >
-                                <Minus className="w-4 h-4" />
-                              </motion.button>
-                              
-                              <div className="w-16 text-center">
-                                <span className="text-xl font-bold text-gray-900">
-                                  {selectedItems[item.id] || 0}
-                                </span>
-                              </div>
-                              
-                              <motion.button
-                                whileHover={{ scale: 1.1 }}
-                                whileTap={{ scale: 0.9 }}
-                                onClick={() => setSelectedItems(prev => ({
-                                  ...prev,
-                                  [item.id]: (prev[item.id] || 0) + 1
-                                }))}
-                                className="w-10 h-10 bg-green-500 hover:bg-green-600 rounded-xl flex items-center justify-center text-white font-bold transition-all shadow-lg"
-                              >
-                                <Plus className="w-4 h-4" />
-                              </motion.button>
-                            </div>
-                            
-                            {selectedItems[item.id] > 0 && (
-                              <motion.div
-                                initial={{ opacity: 0, scale: 0.8 }}
-                                animate={{ opacity: 1, scale: 1 }}
-                                className="bg-orange-100 text-orange-700 px-3 py-1 rounded-full text-sm font-semibold"
-                              >
-                                ₹{(selectedItems[item.id] || 0) * item.price}
-                              </motion.div>
-                            )}
-                          </div>
-                        </motion.div>
-                      ))}
-                    </div>
-                  </motion.div>
-                ))}
-              </div>
-            </div>
-
-            {/* Enhanced Footer */}
-            <div className="p-6 bg-gray-50 border-t border-gray-200">
-              <div className="flex flex-col sm:flex-row gap-4">
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
+                </div>
+                <button
                   onClick={() => {
                     setShowOrderModal(false);
                     setSelectedItems({});
+                    setActiveCategory(menuItems[0]?.category || '');
                   }}
-                  className="flex-1 py-4 px-6 border-2 border-gray-300 text-gray-700 rounded-2xl hover:bg-gray-100 transition-all font-semibold"
+                  className="w-10 h-10 bg-gray-100 hover:bg-gray-200 rounded-full flex items-center justify-center text-gray-600 transition-colors"
                 >
-                  Cancel
-                </motion.button>
-                <motion.button
-                  whileHover={{ scale: 1.02 }}
-                  whileTap={{ scale: 0.98 }}
-                  onClick={handleAddOrder}
-                  disabled={Object.values(selectedItems).every(qty => qty === 0)}
-                  className="flex-1 py-4 px-6 bg-gradient-to-r from-green-500 to-emerald-500 hover:from-green-600 hover:to-emerald-600 text-white rounded-2xl transition-all disabled:opacity-50 disabled:cursor-not-allowed font-semibold flex items-center justify-center space-x-3 shadow-lg"
-                >
-                  <ShoppingBag className="w-5 h-5" />
-                  <span>
-                    Add {Object.values(selectedItems).reduce((sum, qty) => sum + qty, 0)} Items
-                    {Object.values(selectedItems).some(qty => qty > 0) && (
-                      <span className="ml-2 opacity-75">
-                        (₹{Object.entries(selectedItems).reduce((sum, [menuId, quantity]) => {
-                          const item = menuItems.find(m => m.id === menuId);
-                          return sum + (item ? item.price * quantity : 0);
-                        }, 0)})
-                      </span>
-                    )}
-                  </span>
-                </motion.button>
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Menu Items Grid */}
+              <div className="flex-1 overflow-y-auto p-6 bg-gray-50/50 modal-scroll">
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
+                  {filteredMenuItems.map((item) => {
+                    // Check if this item is already in the current order
+                    const isInCurrentOrder = selectedTableData?.order.some(orderItem => orderItem.menuItem.id === item.id);
+                    const currentOrderQuantity = selectedTableData?.order
+                      .filter(orderItem => orderItem.menuItem.id === item.id)
+                      .reduce((sum, orderItem) => sum + orderItem.quantity, 0) || 0;
+                      
+                    return (
+                    <motion.div
+                      key={item.id}
+                      layout
+                      whileHover={{ scale: 1.01 }}
+                      whileTap={{ scale: 0.99 }}
+                      className={`bg-white border rounded-lg p-3 cursor-pointer transition-all duration-200 shadow-sm hover:shadow-md relative menu-item-compact ${
+                        selectedItems[item.id] > 0
+                          ? 'shadow-md border-2'
+                          : isInCurrentOrder
+                          ? 'border-blue-300 bg-blue-50/30'
+                          : 'border-gray-200 hover:border-gray-300'
+                      }`}
+                      style={{
+                        borderColor: selectedItems[item.id] > 0 ? '#9e7f57' : 
+                                   isInCurrentOrder ? '#93c5fd' : undefined,
+                        backgroundColor: selectedItems[item.id] > 0 ? 'rgba(158, 127, 87, 0.03)' : 
+                                       isInCurrentOrder ? 'rgba(59, 130, 246, 0.05)' : undefined
+                      }}
+                      onClick={() => setSelectedItems(prev => ({
+                        ...prev,
+                        [item.id]: (prev[item.id] || 0) + 1
+                      }))}
+                    >
+                      {/* Already ordered indicator */}
+                      {isInCurrentOrder && (
+                        <div className="absolute top-1 left-1 bg-blue-500 text-white text-xs px-1.5 py-0.5 rounded-full font-bold">
+                          {currentOrderQuantity} in order
+                        </div>
+                      )}
+
+                      {/* Selection Badge */}
+                      {selectedItems[item.id] > 0 && (
+                        <div 
+                          className="absolute -top-2 -right-2 w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold shadow-md z-10"
+                          style={{ backgroundColor: '#9e7f57' }}
+                        >
+                          {selectedItems[item.id]}
+                        </div>
+                      )}
+
+                      {/* Item Content */}
+                      <div className="space-y-2">
+                        {/* Header */}
+                        <div className="flex justify-between items-start">
+                          <h5 className="font-semibold text-gray-900 text-sm leading-tight flex-1 pr-2">
+                            {item.name}
+                          </h5>
+                          <p 
+                            className="text-sm font-bold whitespace-nowrap" 
+                            style={{ color: '#9e7f57' }}
+                          >
+                            ₹{item.price}
+                          </p>
+                        </div>
+
+                        {/* Description - Compact */}
+                        {item.description && (
+                          <p className="text-gray-600 text-xs leading-tight line-clamp-1">
+                            {item.description}
+                          </p>
+                        )}
+
+                        {/* Quantity Controls - Cleaner Design */}
+                        <div className="flex items-center justify-between pt-1">
+                          <div className="flex items-center space-x-1">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedItems(prev => ({
+                                  ...prev,
+                                  [item.id]: Math.max(0, (prev[item.id] || 0) - 1)
+                                }));
+                              }}
+                              disabled={!selectedItems[item.id]}
+                              className="w-6 h-6 bg-gray-100 hover:bg-red-100 disabled:bg-gray-50 disabled:text-gray-300 rounded flex items-center justify-center text-gray-600 hover:text-red-600 transition-colors text-xs"
+                            >
+                              <Minus className="w-3 h-3" />
+                            </button>
+                            
+                            <span className="w-6 text-center font-medium text-gray-900 text-sm">
+                              {selectedItems[item.id] || 0}
+                            </span>
+                            
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setSelectedItems(prev => ({
+                                  ...prev,
+                                  [item.id]: (prev[item.id] || 0) + 1
+                                }));
+                              }}
+                              className="w-6 h-6 rounded flex items-center justify-center text-white transition-colors"
+                              style={{ backgroundColor: '#9e7f57' }}
+                              onMouseEnter={(e) => {
+                                e.currentTarget.style.backgroundColor = '#8a6d4a';
+                              }}
+                              onMouseLeave={(e) => {
+                                e.currentTarget.style.backgroundColor = '#9e7f57';
+                              }}
+                            >
+                              <Plus className="w-3 h-3" />
+                            </button>
+                          </div>
+
+                          {/* Subtotal */}
+                          {selectedItems[item.id] > 0 && (
+                            <div className="text-right">
+                              <span 
+                                className="text-xs font-bold"
+                                style={{ color: '#9e7f57' }}
+                              >
+                                ₹{(selectedItems[item.id] || 0) * item.price}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </motion.div>
+                    );
+                  })}
+                </div>
+
+                {/* Empty State */}
+                {filteredMenuItems.length === 0 && (
+                  <div className="text-center py-12">
+                    <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                      <Search className="w-8 h-8 text-gray-400" />
+                    </div>
+                    <h3 className="text-lg font-medium text-gray-900 mb-2">No items found</h3>
+                    <p className="text-gray-500">Try adjusting your search or category filter</p>
+                  </div>
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="p-4 bg-white border-t border-gray-200">
+                <div className="flex space-x-3">
+                  <button
+                    onClick={() => {
+                      setShowOrderModal(false);
+                      setSelectedItems({});
+                      setActiveCategory(menuItems[0]?.category || '');
+                    }}
+                    className="px-6 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors font-medium text-sm"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleAddOrder}
+                    disabled={Object.values(selectedItems).every(qty => qty === 0)}
+                    className="flex-1 py-2.5 px-6 text-white rounded-lg font-semibold transition-colors flex items-center justify-center space-x-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+                    style={{
+                      background: Object.values(selectedItems).some(qty => qty > 0) 
+                        ? 'linear-gradient(135deg, #9e7f57 0%, #8a6d4a 100%)' 
+                        : '#d1d5db'
+                    }}
+                    onMouseEnter={(e) => {
+                      if (!Object.values(selectedItems).every(qty => qty === 0)) {
+                        e.currentTarget.style.background = 'linear-gradient(135deg, #8a6d4a 0%, #76603d 100%)';
+                      }
+                    }}
+                    onMouseLeave={(e) => {
+                      if (!Object.values(selectedItems).every(qty => qty === 0)) {
+                        e.currentTarget.style.background = 'linear-gradient(135deg, #9e7f57 0%, #8a6d4a 100%)';
+                      }
+                    }}
+                  >
+                    <ShoppingBag className="w-4 h-4" />
+                    <span>
+                      Add {Object.values(selectedItems).reduce((sum, qty) => sum + qty, 0)} Items
+                      {Object.values(selectedItems).some(qty => qty > 0) && (
+                        <span className="ml-2 opacity-90">
+                          (₹{Object.entries(selectedItems).reduce((sum, [menuId, quantity]) => {
+                            const item = menuItems.find(m => m.id === menuId);
+                            return sum + (item ? item.price * quantity : 0);
+                          }, 0)})
+                        </span>
+                      )}
+                      {(selectedTableData?.order.length || 0) > 0 && Object.values(selectedItems).some(qty => qty > 0) && (
+                        <span className="block text-xs opacity-75 mt-1">
+                          Total will be: ₹{(selectedTableData?.order.reduce((sum, item) => sum + (item.menuItem.price * item.quantity), 0) || 0) + 
+                            Object.entries(selectedItems).reduce((sum, [menuId, quantity]) => {
+                              const item = menuItems.find(m => m.id === menuId);
+                              return sum + (item ? item.price * quantity : 0);
+                            }, 0)}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                </div>
               </div>
             </div>
+
+            {/* Right Sidebar - Current Order & Existing Orders */}
+            <AnimatePresence>
+              {(Object.values(selectedItems).some(qty => qty > 0) || (selectedTableData?.order.length || 0) > 0) && (
+                <motion.div
+                  initial={{ opacity: 0, x: 20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 20 }}
+                  transition={{ 
+                    type: "spring", 
+                    damping: 25, 
+                    stiffness: 300
+                  }}
+                  className="border-l border-gray-200 flex flex-col overflow-hidden"
+                  style={{ backgroundColor: '#faf9f7' }}
+                >
+                {/* Header */}
+                <div 
+                  className="p-4 border-b"
+                  style={{ 
+                    borderColor: 'rgba(158, 127, 87, 0.2)',
+                    background: 'linear-gradient(135deg, #9e7f57 0%, #8a6d4a 100%)'
+                  }}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="font-bold text-white">Order Summary</h4>
+                    {Object.values(selectedItems).some(qty => qty > 0) && (
+                      <button
+                        onClick={() => setSelectedItems({})}
+                        className="text-white/80 hover:text-white text-xs font-medium px-2 py-1 rounded transition-colors"
+                        style={{ backgroundColor: 'rgba(255, 255, 255, 0.1)' }}
+                      >
+                        Clear New
+                      </button>
+                    )}
+                  </div>
+                  <div className="text-white/80 text-xs">
+                    {((selectedTableData?.order.length || 0) + Object.values(selectedItems).reduce((sum, qty) => sum + qty, 0))} items total
+                  </div>
+                </div>
+
+                {/* Unified Items List */}
+                <div className="flex-1 overflow-y-auto p-3 modal-scroll">
+                  <div className="space-y-2">
+                    {/* Existing Orders */}
+                    {selectedTableData?.order.map((orderItem) => (
+                      <motion.div
+                        key={orderItem.id}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        className="bg-white rounded-lg p-3 shadow-sm border-2 border-blue-300"
+                      >
+                        <div className="flex justify-between items-start mb-2">
+                          <h6 className="font-medium text-gray-900 text-xs leading-tight flex-1 pr-1">
+                            {orderItem.menuItem.name}
+                          </h6>
+                          <div className="flex space-x-1">
+                            <div className="text-xs bg-blue-600 text-white px-1.5 py-0.5 rounded-full font-bold">
+                              Ordered
+                            </div>
+                            <button
+                              onClick={() => removeOrderFromTable(selectedTable!, orderItem.id)}
+                              className="text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
+                              title="Remove from order"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        </div>
+                        
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center space-x-1">
+                            <button
+                              onClick={() => {
+                                // Decrease quantity by removing and re-adding with less quantity
+                                if (orderItem.quantity > 1) {
+                                  removeOrderFromTable(selectedTable!, orderItem.id);
+                                  // Add back with reduced quantity
+                                  setTimeout(() => {
+                                    addOrderToTable(selectedTable!, {
+                                      id: `order-${Date.now()}`, // Generate new ID
+                                      menuItem: orderItem.menuItem,
+                                      quantity: orderItem.quantity - 1
+                                    });
+                                  }, 100);
+                                } else {
+                                  removeOrderFromTable(selectedTable!, orderItem.id);
+                                }
+                              }}
+                              className="w-5 h-5 bg-gray-100 hover:bg-red-100 rounded flex items-center justify-center text-gray-600 hover:text-red-600 transition-colors"
+                            >
+                              <Minus className="w-2.5 h-2.5" />
+                            </button>
+                            
+                            <span className="font-medium text-gray-900 min-w-[16px] text-center text-xs">
+                              {orderItem.quantity}
+                            </span>
+                            
+                            <button
+                              onClick={() => {
+                                // Add one more of the same item
+                                setSelectedItems(prev => ({
+                                  ...prev,
+                                  [orderItem.menuItem.id]: (prev[orderItem.menuItem.id] || 0) + 1
+                                }));
+                              }}
+                              className="w-5 h-5 bg-blue-100 hover:bg-blue-200 rounded flex items-center justify-center text-blue-600 transition-colors"
+                            >
+                              <Plus className="w-2.5 h-2.5" />
+                            </button>
+                          </div>
+                          
+                          <div className="text-right">
+                            <div className="text-xs text-gray-500">₹{orderItem.menuItem.price} each</div>
+                            <div className="font-bold text-xs text-blue-600">
+                              ₹{orderItem.quantity * orderItem.menuItem.price}
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    ))}
+
+                    {/* New Selections */}
+                    {Object.entries(selectedItems)
+                      .filter(([_, qty]) => qty > 0)
+                      .map(([itemId, quantity]) => {
+                        const item = menuItems.find(m => m.id === itemId);
+                        if (!item) return null;
+                        return (
+                          <motion.div
+                            key={`new-${itemId}`}
+                            initial={{ opacity: 0, y: 10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            className="bg-white rounded-lg p-3 shadow-sm border-2"
+                            style={{ borderColor: '#9e7f57' }}
+                          >
+                            <div className="flex justify-between items-start mb-2">
+                              <h6 className="font-medium text-gray-900 text-xs leading-tight flex-1 pr-1">
+                                {item.name}
+                              </h6>
+                              <div className="flex space-x-1">
+                                <div 
+                                  className="text-xs text-white px-1.5 py-0.5 rounded-full font-bold"
+                                  style={{ backgroundColor: '#9e7f57' }}
+                                >
+                                  Adding
+                                </div>
+                                <button
+                                  onClick={() => setSelectedItems(prev => ({
+                                    ...prev,
+                                    [itemId]: 0
+                                  }))}
+                                  className="text-gray-400 hover:text-red-500 transition-colors flex-shrink-0"
+                                >
+                                  <X className="w-3 h-3" />
+                                </button>
+                              </div>
+                            </div>
+                            
+                            <div className="flex items-center justify-between">
+                              <div className="flex items-center space-x-1">
+                                <button
+                                  onClick={() => setSelectedItems(prev => ({
+                                    ...prev,
+                                    [itemId]: Math.max(0, quantity - 1)
+                                  }))}
+                                  className="w-5 h-5 bg-gray-100 hover:bg-red-100 rounded flex items-center justify-center text-gray-600 hover:text-red-600 transition-colors"
+                                >
+                                  <Minus className="w-2.5 h-2.5" />
+                                </button>
+                                
+                                <span className="font-medium text-gray-900 min-w-[16px] text-center text-xs">
+                                  {quantity}
+                                </span>
+                                
+                                <button
+                                  onClick={() => setSelectedItems(prev => ({
+                                    ...prev,
+                                    [itemId]: quantity + 1
+                                  }))}
+                                  className="w-5 h-5 rounded flex items-center justify-center text-white transition-colors"
+                                  style={{ backgroundColor: '#9e7f57' }}
+                                  onMouseEnter={(e) => {
+                                    e.currentTarget.style.backgroundColor = '#8a6d4a';
+                                  }}
+                                  onMouseLeave={(e) => {
+                                    e.currentTarget.style.backgroundColor = '#9e7f57';
+                                  }}
+                                >
+                                  <Plus className="w-2.5 h-2.5" />
+                                </button>
+                              </div>
+                              
+                              <div className="text-right">
+                                <div className="text-xs text-gray-500">₹{item.price} each</div>
+                                <div 
+                                  className="font-bold text-xs"
+                                  style={{ color: '#9e7f57' }}
+                                >
+                                  ₹{quantity * item.price}
+                                </div>
+                              </div>
+                            </div>
+                          </motion.div>
+                        );
+                      })}
+                  </div>
+                </div>
+
+                {/* Order Total */}
+                <div 
+                  className="p-3 border-t"
+                  style={{ 
+                    borderColor: 'rgba(158, 127, 87, 0.2)',
+                    backgroundColor: 'rgba(158, 127, 87, 0.05)'
+                  }}
+                >
+                  <div className="flex justify-between items-center">
+                    <span className="font-bold text-gray-900">Total:</span>
+                    <span className="font-bold text-lg text-green-600">
+                      ₹{(selectedTableData?.order.reduce((sum, item) => sum + (item.menuItem.price * item.quantity), 0) || 0) + 
+                        Object.entries(selectedItems).reduce((sum, [menuId, quantity]) => {
+                          const item = menuItems.find(m => m.id === menuId);
+                          return sum + (item ? item.price * quantity : 0);
+                        }, 0)}
+                    </span>
+                  </div>
+                  <p className="text-gray-600 text-xs mt-1 text-center">
+                    {(selectedTableData?.order.length || 0) + Object.values(selectedItems).reduce((sum, qty) => sum + qty, 0)} items total
+                  </p>
+                </div>
+              </motion.div>
+            )}
+            </AnimatePresence>
           </motion.div>
         </div>
       )}
@@ -1299,67 +1642,14 @@ export default function TableManagement() {
         </div>
       )}
 
-      {/* Shift Table Modal */}
-      {showShiftModal && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-          <motion.div
-            initial={{ opacity: 0, scale: 0.9 }}
-            animate={{ opacity: 1, scale: 1 }}
-            className="bg-white rounded-xl p-6 w-full max-w-md"
-          >
-            <div className="flex justify-between items-center mb-6">
-              <h3 className="text-xl font-semibold text-gray-800">Shift Table</h3>
-              <button
-                onClick={() => setShowShiftModal(false)}
-                className="text-gray-500 hover:text-gray-700"
-              >
-                <X className="w-6 h-6" />
-              </button>
-            </div>
-
-            <p className="text-gray-600 mb-4">
-              Move customers from Table {selectedTableData?.number} to:
-            </p>
-
-            <div className="space-y-2 mb-6">
-              {tables
-                .filter(t => t.id !== selectedTable && t.status === 'available')
-                .map(table => (
-                  <label key={table.id} className="flex items-center space-x-3 p-3 border rounded-lg cursor-pointer hover:bg-gray-50">
-                    <input
-                      type="radio"
-                      name="shiftTable"
-                      value={table.id}
-                      checked={shiftToTable === table.id}
-                      onChange={(e) => setShiftToTable(e.target.value)}
-                      className="w-4 h-4 text-indigo-600 border-gray-300 focus:ring-indigo-500"
-                    />
-                    <div>
-                      <p className="font-medium text-gray-800">Table {table.number}</p>
-                      <p className="text-sm text-gray-600">Available</p>
-                    </div>
-                  </label>
-                ))}
-            </div>
-
-            <div className="flex space-x-3">
-              <button
-                onClick={() => setShowShiftModal(false)}
-                className="flex-1 py-3 px-4 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleShift}
-                disabled={!shiftToTable}
-                className="flex-1 py-3 px-4 bg-indigo-500 text-white rounded-lg hover:bg-indigo-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              >
-                Shift Table
-              </button>
-            </div>
-          </motion.div>
-        </div>
-      )}
+      {/* New Shift Table Modal Component */}
+      <ShiftTableModal
+        isOpen={showShiftModal}
+        onClose={() => setShowShiftModal(false)}
+        sourceTable={selectedTableData || null}
+        availableTables={availableTablesForShift}
+        onShift={handleShift}
+      />
 
       {/* View All Orders Modal */}
       {showViewOrdersModal && selectedTable && selectedTableData && (
